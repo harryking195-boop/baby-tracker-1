@@ -29,6 +29,7 @@ create table if not exists public.baby_entries (
   type text not null check (type in ('feed', 'nappy', 'med')),
   happened_at timestamptz not null,
   amount_ml numeric,
+  duration_mins numeric,
   feed_type text,
   nappy_type text,
   medication_name text,
@@ -37,6 +38,9 @@ create table if not exists public.baby_entries (
   created_by uuid not null default auth.uid() references auth.users(id),
   created_at timestamptz not null default now()
 );
+
+alter table public.baby_entries
+add column if not exists duration_mins numeric;
 
 alter table public.babies enable row level security;
 alter table public.baby_members enable row level security;

@@ -37,6 +37,7 @@ const entryTypes = {
 type EntryForm = {
   happened_at: string
   amount_ml: string
+  duration_mins: string
   feed_type: string
   nappy_type: string
   medication_name: string
@@ -47,6 +48,7 @@ type EntryForm = {
 const initialForm = (): EntryForm => ({
   happened_at: new Date().toISOString().slice(0, 16),
   amount_ml: '',
+  duration_mins: '',
   feed_type: 'Bottle',
   nappy_type: 'Wet',
   medication_name: '',
@@ -61,6 +63,18 @@ function formatTime(value: string) {
     hour: '2-digit',
     minute: '2-digit',
   })
+}
+
+function getEstimatedMilkMl(entry: BabyEntry) {
+  if (entry.type !== 'feed') return 0
+
+  const bottleAmount = entry.amount_ml || 0
+  const breastEstimate =
+    entry.feed_type?.toLowerCase().includes('breast') && entry.duration_mins
+      ? entry.duration_mins * 7
+      : 0
+
+  return bottleAmount + breastEstimate
 }
 
 function fromBabyRow(row: Record<string, unknown>): BabyProfile {
@@ -308,7 +322,14 @@ export default function BabyTrackerApp() {
       baby_id: babyId || undefined,
       type: activeType,
       happened_at: new Date(form.happened_at).toISOString(),
-      amount_ml: activeType === 'feed' && form.amount_ml ? Number(form.amount_ml) : null,
+      amount_ml:
+        activeType === 'feed' && form.feed_type !== 'Breast' && form.amount_ml
+          ? Number(form.amount_ml)
+          : null,
+      duration_mins:
+        activeType === 'feed' && form.feed_type === 'Breast' && form.duration_mins
+          ? Number(form.duration_mins)
+          : null,
       feed_type: activeType === 'feed' ? form.feed_type : null,
       nappy_type: activeType === 'nappy' ? form.nappy_type : null,
       medication_name: activeType === 'med' ? form.medication_name : null,
@@ -453,7 +474,7 @@ export default function BabyTrackerApp() {
       feeds: recentEntries.filter((entry) => entry.type === 'feed').length,
       nappies: recentEntries.filter((entry) => entry.type === 'nappy').length,
       meds: recentEntries.filter((entry) => entry.type === 'med').length,
-      ml: recentEntries.reduce((sum, entry) => sum + (entry.amount_ml || 0), 0),
+      ml: Math.round(recentEntries.reduce((sum, entry) => sum + getEstimatedMilkMl(entry), 0)),
     }
   }, [entries])
 
@@ -706,12 +727,21 @@ export default function BabyTrackerApp() {
                 <option>Formula</option>
                 <option>Expressed</option>
               </select>
-              <input
-                type="number"
-                placeholder="Amount ml"
-                value={form.amount_ml}
-                onChange={(event) => setForm({ ...form, amount_ml: event.target.value })}
-              />
+              {form.feed_type === 'Breast' ? (
+                <input
+                  type="number"
+                  placeholder="Duration mins"
+                  value={form.duration_mins}
+                  onChange={(event) => setForm({ ...form, duration_mins: event.target.value })}
+                />
+              ) : (
+                <input
+                  type="number"
+                  placeholder="Amount ml"
+                  value={form.amount_ml}
+                  onChange={(event) => setForm({ ...form, amount_ml: event.target.value })}
+                />
+              )}
             </div>
           )}
 
@@ -787,7 +817,15 @@ export default function BabyTrackerApp() {
                   </div>
                   <p>
                     {entry.type === 'feed' &&
-                      `${entry.feed_type || 'Feed'}${entry.amount_ml ? ` - ${entry.amount_ml}ml` : ''}`}
+                      `${entry.feed_type || 'Feed'}${entry.amount_ml ? ` - ${entry.amount_ml}ml` : ''}${
+                        entry.duration_mins
+                          ? ` - ${entry.duration_mins} mins${
+                              entry.feed_type?.toLowerCase().includes('breast')
+                                ? ` - est. ${Math.round(entry.duration_mins * 7)}ml`
+                                : ''
+                            }`
+                          : ''
+                      }`}
                     {entry.type === 'nappy' && entry.nappy_type}
                     {entry.type === 'med' &&
                       `${entry.medication_name || 'Medication'}${
