@@ -3,6 +3,7 @@ import { createClient, type Session } from '@supabase/supabase-js'
 import {
   ArrowLeft,
   Baby,
+  BarChart3,
   CalendarDays,
   ChevronDown,
   Copy,
@@ -81,6 +82,20 @@ function isBreastFeed(feedType: string | null) {
   return Boolean(feedType?.toLowerCase().includes('breast'))
 }
 
+function formatDayLabel(date: Date) {
+  return date.toLocaleDateString([], {
+    day: '2-digit',
+    month: 'short',
+  })
+}
+
+function getDayKey(date: Date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
 function fromBabyRow(row: Record<string, unknown>): BabyProfile {
   return {
     id: row.id as string,
@@ -115,7 +130,7 @@ export default function BabyTrackerApp() {
   const [usingImportedData, setUsingImportedData] = useState(true)
   const [babyId, setBabyId] = useState('')
   const [activeType, setActiveType] = useState<EntryType>('feed')
-  const [currentPage, setCurrentPage] = useState<'tracker' | 'profile'>('tracker')
+  const [currentPage, setCurrentPage] = useState<'tracker' | 'profile' | 'stats'>('tracker')
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
   const [profile, setProfile] = useState<BabyProfile>(babyProfile)
   const [profileForm, setProfileForm] = useState<BabyProfile>(babyProfile)
@@ -392,6 +407,11 @@ export default function BabyTrackerApp() {
     setAccountMenuOpen(false)
   }
 
+  function openStats() {
+    setCurrentPage('stats')
+    setAccountMenuOpen(false)
+  }
+
   async function saveProfile() {
     const nextProfile = { ...profileForm, photoUrl: photoDraft || profileForm.photoUrl }
 
@@ -492,6 +512,55 @@ export default function BabyTrackerApp() {
     [activeType, entries],
   )
 
+  const dailyStats = useMemo(() => {
+    const today = new Date()
+    const days = Array.from({ length: 7 }, (_item, index) => {
+      const date = new Date(today)
+      date.setHours(0, 0, 0, 0)
+      date.setDate(date.getDate() - (6 - index))
+
+      return {
+        key: getDayKey(date),
+        label: formatDayLabel(date),
+        feeds: 0,
+        milkMl: 0,
+        nappies: 0,
+        meds: 0,
+      }
+    })
+
+    const dayMap = new Map(days.map((day) => [day.key, day]))
+
+    entries.forEach((entry) => {
+      const entryDate = new Date(entry.happened_at)
+      const day = dayMap.get(getDayKey(entryDate))
+      if (!day) return
+
+      if (entry.type === 'feed') {
+        day.feeds += 1
+        day.milkMl += getEstimatedMilkMl(entry)
+      }
+      if (entry.type === 'nappy') day.nappies += 1
+      if (entry.type === 'med') day.meds += 1
+    })
+
+    return days.map((day) => ({ ...day, milkMl: Math.round(day.milkMl) }))
+  }, [entries])
+
+  const statsSummary = useMemo(() => {
+    const totalFeeds = dailyStats.reduce((sum, day) => sum + day.feeds, 0)
+    const totalMilk = dailyStats.reduce((sum, day) => sum + day.milkMl, 0)
+    const totalNappies = dailyStats.reduce((sum, day) => sum + day.nappies, 0)
+    const totalMeds = dailyStats.reduce((sum, day) => sum + day.meds, 0)
+
+    return {
+      avgFeeds: Math.round((totalFeeds / dailyStats.length) * 10) / 10,
+      avgMilk: Math.round(totalMilk / dailyStats.length),
+      avgNappies: Math.round((totalNappies / dailyStats.length) * 10) / 10,
+      avgMeds: Math.round((totalMeds / dailyStats.length) * 10) / 10,
+    }
+  }, [dailyStats])
+
   if (loading) return <main className="loading-screen">Loading...</main>
 
   return (
@@ -503,6 +572,8 @@ export default function BabyTrackerApp() {
             <p>
               {currentPage === 'profile'
                 ? "Update your baby's core information."
+                : currentPage === 'stats'
+                  ? 'Daily patterns and recent trends.'
                 : 'Feeds, nappies and meds in one shared place.'}
             </p>
           </div>
@@ -522,6 +593,10 @@ export default function BabyTrackerApp() {
                 <button type="button" onClick={openProfile}>
                   <User aria-hidden="true" />
                   Profile
+                </button>
+                <button type="button" onClick={openStats}>
+                  <BarChart3 aria-hidden="true" />
+                  Stats
                 </button>
                 {session ? (
                   <button type="button" onClick={signOut}>
@@ -668,6 +743,55 @@ export default function BabyTrackerApp() {
                   </button>
                 </div>
               </div>
+            </section>
+          </section>
+        ) : currentPage === 'stats' ? (
+          <section className="panel stats-page">
+            <button className="text-action" type="button" onClick={() => setCurrentPage('tracker')}>
+              <ArrowLeft aria-hidden="true" />
+              Back
+            </button>
+            <div className="stats-header">
+              <div>
+                <h2>Daily stats</h2>
+                <p>Last 7 days, using estimated breast milk at 7ml per minute.</p>
+              </div>
+            </div>
+            <section className="summary-grid" aria-label="Daily averages">
+              <SummaryCard label="Avg feeds" value={statsSummary.avgFeeds} />
+              <SummaryCard label="Avg milk" value={`${statsSummary.avgMilk}ml`} />
+              <SummaryCard label="Avg nappies" value={statsSummary.avgNappies} />
+              <SummaryCard label="Avg meds" value={statsSummary.avgMeds} />
+            </section>
+            <div className="trend-grid">
+              <TrendCard title="Feeds" unit="" data={dailyStats.map((day) => ({ label: day.label, value: day.feeds }))} />
+              <TrendCard title="Milk" unit="ml" data={dailyStats.map((day) => ({ label: day.label, value: day.milkMl }))} />
+              <TrendCard title="Nappies" unit="" data={dailyStats.map((day) => ({ label: day.label, value: day.nappies }))} />
+              <TrendCard title="Meds" unit="" data={dailyStats.map((day) => ({ label: day.label, value: day.meds }))} />
+            </div>
+            <section className="daily-table-wrap" aria-label="Daily totals">
+              <table className="daily-table">
+                <thead>
+                  <tr>
+                    <th>Day</th>
+                    <th>Feeds</th>
+                    <th>Milk</th>
+                    <th>Nappies</th>
+                    <th>Meds</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dailyStats.toReversed().map((day) => (
+                    <tr key={day.key}>
+                      <td>{day.label}</td>
+                      <td>{day.feeds}</td>
+                      <td>{day.milkMl}ml</td>
+                      <td>{day.nappies}</td>
+                      <td>{day.meds}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </section>
           </section>
         ) : (
@@ -870,6 +994,41 @@ function ProfileFact({ label, value }: { label: string; value: string | number }
     <article>
       <p>{label}</p>
       <strong>{value}</strong>
+    </article>
+  )
+}
+
+function TrendCard({
+  title,
+  unit,
+  data,
+}: {
+  title: string
+  unit: string
+  data: Array<{ label: string; value: number }>
+}) {
+  const maxValue = Math.max(...data.map((day) => day.value), 1)
+
+  return (
+    <article className="panel trend-card">
+      <h3>{title}</h3>
+      <div className="trend-bars">
+        {data.map((day) => (
+          <div className="trend-day" key={day.label}>
+            <span className="trend-value">
+              {day.value}
+              {unit}
+            </span>
+            <div className="trend-track">
+              <div
+                className="trend-fill"
+                style={{ height: `${Math.max((day.value / maxValue) * 100, day.value ? 8 : 0)}%` }}
+              />
+            </div>
+            <span className="trend-label">{day.label}</span>
+          </div>
+        ))}
+      </div>
     </article>
   )
 }
