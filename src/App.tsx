@@ -441,15 +441,19 @@ export default function BabyTrackerApp() {
     })
   }
 
-  const todaySummary = useMemo(() => {
-    const today = new Date().toDateString()
-    const todays = entries.filter((entry) => new Date(entry.happened_at).toDateString() === today)
+  const rollingSummary = useMemo(() => {
+    const now = Date.now()
+    const dayAgo = now - 24 * 60 * 60 * 1000
+    const recentEntries = entries.filter((entry) => {
+      const happenedAt = new Date(entry.happened_at).getTime()
+      return happenedAt >= dayAgo && happenedAt <= now
+    })
 
     return {
-      feeds: todays.filter((entry) => entry.type === 'feed').length,
-      nappies: todays.filter((entry) => entry.type === 'nappy').length,
-      meds: todays.filter((entry) => entry.type === 'med').length,
-      ml: todays.reduce((sum, entry) => sum + (entry.amount_ml || 0), 0),
+      feeds: recentEntries.filter((entry) => entry.type === 'feed').length,
+      nappies: recentEntries.filter((entry) => entry.type === 'nappy').length,
+      meds: recentEntries.filter((entry) => entry.type === 'med').length,
+      ml: recentEntries.reduce((sum, entry) => sum + (entry.amount_ml || 0), 0),
     }
   }, [entries])
 
@@ -655,11 +659,11 @@ export default function BabyTrackerApp() {
           <ProfileFact label="Complications" value={profile.complications} />
         </section>
 
-        <section className="summary-grid" aria-label="Today's summary">
-          <SummaryCard label="Feeds" value={todaySummary.feeds} />
-          <SummaryCard label="Milk" value={`${todaySummary.ml}ml`} />
-          <SummaryCard label="Nappies" value={todaySummary.nappies} />
-          <SummaryCard label="Meds" value={todaySummary.meds} />
+        <section className="summary-grid" aria-label="Last 24 hours summary">
+          <SummaryCard label="Feeds 24h" value={rollingSummary.feeds} />
+          <SummaryCard label="Milk 24h" value={`${rollingSummary.ml}ml`} />
+          <SummaryCard label="Nappies 24h" value={rollingSummary.nappies} />
+          <SummaryCard label="Meds 24h" value={rollingSummary.meds} />
         </section>
 
         <section className="panel entry-panel">
