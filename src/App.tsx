@@ -77,6 +77,10 @@ function getEstimatedMilkMl(entry: BabyEntry) {
   return bottleAmount + breastEstimate
 }
 
+function isBreastFeed(feedType: string | null) {
+  return Boolean(feedType?.toLowerCase().includes('breast'))
+}
+
 function fromBabyRow(row: Record<string, unknown>): BabyProfile {
   return {
     id: row.id as string,
@@ -323,11 +327,11 @@ export default function BabyTrackerApp() {
       type: activeType,
       happened_at: new Date(form.happened_at).toISOString(),
       amount_ml:
-        activeType === 'feed' && form.feed_type !== 'Breast' && form.amount_ml
+        activeType === 'feed' && !isBreastFeed(form.feed_type) && form.amount_ml
           ? Number(form.amount_ml)
           : null,
       duration_mins:
-        activeType === 'feed' && form.feed_type === 'Breast' && form.duration_mins
+        activeType === 'feed' && isBreastFeed(form.feed_type) && form.duration_mins
           ? Number(form.duration_mins)
           : null,
       feed_type: activeType === 'feed' ? form.feed_type : null,
@@ -720,17 +724,24 @@ export default function BabyTrackerApp() {
             <div className="two-column">
               <select
                 value={form.feed_type}
-                onChange={(event) => setForm({ ...form, feed_type: event.target.value })}
+                onChange={(event) =>
+                  setForm({
+                    ...form,
+                    feed_type: event.target.value,
+                    amount_ml: '',
+                    duration_mins: '',
+                  })
+                }
               >
                 <option>Bottle</option>
                 <option>Breast</option>
                 <option>Formula</option>
                 <option>Expressed</option>
               </select>
-              {form.feed_type === 'Breast' ? (
+              {isBreastFeed(form.feed_type) ? (
                 <input
                   type="number"
-                  placeholder="Duration mins"
+                  placeholder="Duration (mins)"
                   value={form.duration_mins}
                   onChange={(event) => setForm({ ...form, duration_mins: event.target.value })}
                 />
